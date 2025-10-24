@@ -125,11 +125,11 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=df_fila['TME'], 
             mode='lines+markers+text', 
             name='TME Real (min)',
-            marker=dict(color=cor_tme, size=8, symbol='circle'),
-            line=dict(width=3),
+            marker=dict(color=cor_tme, size=10, symbol='circle'), # Aumenta o marcador
+            line=dict(width=4), # Aumenta a espessura da linha
             text=[formatar_tempo_hhmmss(tme) for tme in df_fila['TME']],
             textposition="top center",
-            textfont=dict(color=cor_tme, size=10),
+            textfont=dict(color=cor_tme, size=11, weight='bold'), # Aumenta e negrita o rótulo
         ),
         secondary_y=False,
     )
@@ -141,7 +141,7 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=[meta_tme_valor] * len(df_fila), 
             mode='lines', 
             name=f'Meta TME ({formatar_tempo_hhmmss(meta_tme_valor)})',
-            line=dict(color=cor_tme, dash='dash', width=1.5),
+            line=dict(color=cor_tme, dash='dash', width=2.5), # Aumenta a espessura da linha de meta
             hoverinfo='skip'
         ),
         secondary_y=False,
@@ -154,11 +154,11 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=df_fila['TMA'], 
             mode='lines+markers+text', 
             name='TMA Real (min)',
-            marker=dict(color=cor_tma, size=8, symbol='square'),
-            line=dict(width=3),
+            marker=dict(color=cor_tma, size=10, symbol='square'), # Aumenta o marcador
+            line=dict(width=4), # Aumenta a espessura da linha
             text=[formatar_tempo_hhmmss(tma) for tma in df_fila['TMA']],
             textposition="top center",
-            textfont=dict(color=cor_tma, size=10),
+            textfont=dict(color=cor_tma, size=11, weight='bold'), # Aumenta e negrita o rótulo
         ),
         secondary_y=True,
     )
@@ -170,13 +170,13 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=[meta_tma_valor] * len(df_fila), 
             mode='lines', 
             name=f'Meta TMA ({formatar_tempo_hhmmss(meta_tma_valor)})',
-            line=dict(color=cor_tma, dash='dash', width=1.5),
+            line=dict(color=cor_tma, dash='dash', width=2.5), # Aumenta a espessura da linha de meta
             hoverinfo='skip'
         ),
         secondary_y=True,
     )
 
-    # --- Configurações de Layout ---
+      # Configurações de Layout ---
 
     # Título
     fig.update_layout(
@@ -189,17 +189,18 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=1.02,
             xanchor="right",
             x=1
-        ),
-        margin=dict(t=100)
+         ),
+        margin=dict(t=100),
+        template='plotly_white' # Fundo claro
     )
-
+    
     # Eixo X
     fig.update_xaxes(
         title_text="Data",
         tickformat="%d/%b",
         showgrid=True,
         gridwidth=1,
-        gridcolor='lightgray'
+        gridcolor='rgba(150, 150, 150, 0.5)' # Grade mais clara (50% de opacidade)
     )
 
     # Eixo Y Primário (TME)
@@ -208,7 +209,7 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
         secondary_y=False, 
         showgrid=True,
         gridwidth=1,
-        gridcolor='lightgray',
+        gridcolor='rgba(150, 150, 150, 0.5)', # Grade mais clara (50% de opacidade)
         # Ajusta o limite superior para acomodar a meta TME e os rótulos de dados
         range=[0, max(df_fila['TME'].max() * 1.15 if not df_fila['TME'].empty else 0, meta_tme_valor * 1.2)]
     )
@@ -224,31 +225,7 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
     
     return fig
 
-def gerar_grafico_volume_plotly(df_fila, fila):
-    """Gera o gráfico de volume de atendimentos."""
-    
-    fig = go.Figure(data=[
-        go.Bar(
-            x=df_fila['Data'], 
-            y=df_fila['volume'], 
-            name='Volume',
-            marker_color='#2ca02c', # Verde
-            text=df_fila['volume'],
-            textposition='outside'
-        )
-    ])
-    
-    fig.update_layout(
-        title_text=f"<b>{fila.upper()}</b> - Volume de Atendimentos por Dia",
-        title_font_size=16,
-        xaxis_title="Data",
-        yaxis_title="Quantidade de Atendimentos",
-        margin=dict(t=50)
-    )
-    
-    fig.update_xaxes(tickformat="%d/%b")
-    
-    return fig
+
 
 # --- Aplicação Streamlit Principal ---
 
@@ -302,22 +279,13 @@ def main():
 
         st.subheader(f"Fila: {fila}")
         
-        # Colunas para organizar os gráficos lado a lado
-        col1, col2 = st.columns([2, 1])
-
-        # Gráfico TME/TMA (Eixos Duplos)
-        with col1:
-            fig_tme_tma = gerar_grafico_tme_tma_plotly(df_fila, fila)
-            st.plotly_chart(fig_tme_tma, use_container_width=True)
-            
-            # Exibir volume total abaixo do gráfico principal
-            volume_total = df_fila['volume'].sum()
-            st.markdown(f"**Volume Total de Atendimentos:** {volume_total}")
-
-        # Gráfico de Volume
-        with col2:
-            fig_volume = gerar_grafico_volume_plotly(df_fila, fila)
-            st.plotly_chart(fig_volume, use_container_width=True)
+            # Gráfico TME/TMA (Eixos Duplos)
+        fig_tme_tma = gerar_grafico_tme_tma_plotly(df_fila, fila)
+        st.plotly_chart(fig_tme_tma, use_container_width=True)
+        
+        # Exibir volume total abaixo do gráfico principal
+        volume_total = df_fila['volume'].sum()
+        st.markdown(f"**Volume Total de Atendimentos:** {volume_total}")
             
         st.markdown("---")
 

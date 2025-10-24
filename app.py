@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime as dt
 from typing import Optional
+import numpy as np
 
 # ----------------------------
 # Configurações iniciais
@@ -100,7 +101,7 @@ def ler_e_processar_dados(uploaded_file) -> Optional[pd.DataFrame]:
 
         df['Inicio da ação'] = pd.to_datetime(df['Inicio da ação'], errors='coerce')
         df = df.dropna(subset=['Inicio da ação'])
-        df['Data'] = df['Inicio da ação'].dt.date
+        df['Data'] = pd.to_datetime(df['Inicio da ação']).dt.normalize()  # garante datetime (00:00:00)
 
         df['TME_minutos'] = df['Tempo na Fila'].apply(converter_tempo_para_minutos)
         df['TMA_minutos'] = df['Tempo de atendimento'].apply(converter_tempo_para_minutos)
@@ -140,57 +141,107 @@ def agregar_metricas(df: pd.DataFrame) -> dict:
     return resultado
 
 def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list):
-    """Gera gráfico Plotly com possibilidade de múltiplas filas."""
+    """Gera gráfico Plotly com:
+       - TME: linha tracejada
+       - TMA: linha SOLIDA (cor distinta) + marcadores coloridos por meta
+       - Axis ticks em hh:mm:ss
+       - Rótulos e hover em hh:mm:ss
+    """
     paleta = [CORES['primary'], CORES['warning'], CORES['success'], '#8B5CF6', '#EC4899', '#14B8A6']
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
+    # coletar todos os valores para definir ticks adequados no eixo
+    valores_minutos = []
+    for fila in filas_selecionadas:
+        df_tmp = df_fila[df_fila['Fila'] == fila]
+        if df_tmp.empty:
+            continue
+        valores_minutos.extend(df_tmp['TME'].tolist())
+        valores_minutos.extend(df_tmp['TMA'].tolist())
+
+    # função interna para gerar ticks em minutos e labels em hh:mm:ss
+    def gerar_ticks_em_minutos(min_val, max_val):
+        if min_val is None or max_val is None or np.isnan(min_val) or np.isnan(max_val):
+            return None, None
+        span = max_val - min_val
+        # escolher passo conforme o span
+        if span <= 30:
+            step = 5
+        elif span <= 120:
+            step = 10
+        elif span <= 360:
+            step = 30
+        else:
+            step = 60
+        low = max(0, int(np.floor(min_val / step)) * step)
+        high = int(np.ceil(max_val / step)) * step
+        tickvals = list(range(low, high + 1, step))
+        ticktext = [formatar_tempo_hhmmss(v) for v in tickvals]
+        return tickvals, ticktext
+
+    # loop por fila (desenha TME e TMA)
     for i, fila in enumerate(filas_selecionadas):
         df_f = df_fila[df_fila['Fila'] == fila].copy().sort_values('Data')
         if df_f.empty:
             continue
-        cor = paleta[i % len(paleta)]
-        
-        # TME
+
+        cor_tme = paleta[i % len(paleta)]
+        cor_tma_base = CORES['dark']  # cor da linha do TMA (sólida)
+
+        meta_tma = METAS.get(fila, {'TMA': 0})['TMA']
+
+        # TME: linha tracejada, rótulos em hh:mm:ss
         fig.add_trace(
             go.Scatter(
-                x=df_f['Data'], y=df_f['TME'], mode='lines+markers+text',
+                x=df_f['Data'],
+                y=df_f['TME'],
+                mode='lines+markers+text',
                 name=f"{fila} - TME",
-                marker=dict(symbol='circle', size=8),
-                line=dict(width=3, color=cor),
-                text=[f"{v:.1f}" for v in df_f['TME']],
+                marker=dict(symbol='circle', size=8, color=cor_tme),
+                line=dict(width=2, dash='dash', color=cor_tme),
+                text=[formatar_tempo_hhmmss(v) for v in df_f['TME']],
                 textposition='top center',
-                textfont=dict(size=10, color=cor, family="Inter, sans-serif"),
-                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TME: %{y:.2f} min<br>%{customdata}<extra></extra>",
+                textfont=dict(size=10, color=cor_tme, family="Inter, sans-serif"),
+                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TME: %{y:.2f} min<br>Tempo: %{customdata}<extra></extra>",
                 customdata=[formatar_tempo_hhmmss(v) for v in df_f['TME']]
             ),
             secondary_y=False
         )
-        
-        # TMA
+
+        # TMA: linha SOLIDA (cor base) + marcadores coloridos por meta (verde/vermelho)
+        tma_marker_colors = [
+            CORES['success'] if (v is not None and not pd.isna(v) and v <= meta_tma) else CORES['danger']
+            for v in df_f['TMA']
+        ]
+
         fig.add_trace(
             go.Scatter(
-                x=df_f['Data'], y=df_f['TMA'], mode='lines+markers+text',
+                x=df_f['Data'],
+                y=df_f['TMA'],
+                mode='lines+markers+text',
                 name=f"{fila} - TMA",
-                marker=dict(symbol='square', size=8),
-                line=dict(width=3, dash='dash', color=cor),
-                text=[f"{v:.1f}" for v in df_f['TMA']],
+                marker=dict(symbol='square', size=9, color=tma_marker_colors, line=dict(width=1, color='rgba(0,0,0,0.08)')),
+                line=dict(width=3, dash='solid', color=cor_tma_base),
+                text=[formatar_tempo_hhmmss(v) for v in df_f['TMA']],
                 textposition='bottom center',
-                textfont=dict(size=10, color=cor, family="Inter, sans-serif"),
-                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TMA: %{y:.2f} min<br>%{customdata}<extra></extra>",
+                textfont=dict(size=10, color=cor_tma_base, family="Inter, sans-serif"),
+                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TMA: %{y:.2f} min<br>Tempo: %{customdata}<extra></extra>",
                 customdata=[formatar_tempo_hhmmss(v) for v in df_f['TMA']]
             ),
             secondary_y=True
         )
 
+    # adicionar linhas de meta (usa o menor meta entre as filas selecionadas)
     metas_tme = [METAS.get(fila, {'TME': 0})['TME'] for fila in filas_selecionadas if fila in METAS]
     metas_tma = [METAS.get(fila, {'TMA': 0})['TMA'] for fila in filas_selecionadas if fila in METAS]
-    all_dates = sorted(df_fila['Data'].unique().tolist())
-    
+    # pegar todas as datas presentes no df_fila para desenhar a reta de meta
+    all_dates = sorted(df_fila['Data'].unique()) if not df_fila.empty else []
+
     if all_dates:
         if metas_tme:
             meta_tme_min = min(metas_tme)
             fig.add_trace(
-                go.Scatter(x=all_dates, y=[meta_tme_min]*len(all_dates), mode='lines',
+                go.Scatter(x=all_dates, y=[meta_tme_min] * len(all_dates), mode='lines',
                            name=f"Meta TME ({meta_tme_min:.0f}m)",
                            line=dict(color=CORES['info'], dash='dot', width=2),
                            hovertemplate="Meta TME: %{y:.2f} min<extra></extra>"),
@@ -199,7 +250,7 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
         if metas_tma:
             meta_tma_min = min(metas_tma)
             fig.add_trace(
-                go.Scatter(x=all_dates, y=[meta_tma_min]*len(all_dates), mode='lines',
+                go.Scatter(x=all_dates, y=[meta_tma_min] * len(all_dates), mode='lines',
                            name=f"Meta TMA ({meta_tma_min:.0f}m)",
                            line=dict(color=CORES['warning'], dash='dot', width=2),
                            hovertemplate="Meta TMA: %{y:.2f} min<extra></extra>"),
@@ -228,6 +279,45 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
         height=520
     )
 
+    # configurar ticks dos eixos Y para mostrar hh:mm:ss
+    if valores_minutos:
+        valores_clean = [v for v in valores_minutos if v is not None and not pd.isna(v)]
+        if valores_clean:
+            mn = float(np.nanmin(valores_clean))
+            mx = float(np.nanmax(valores_clean))
+            tickvals, ticktext = gerar_ticks_em_minutos(mn, mx)
+            if tickvals and ticktext:
+                fig.update_yaxes(
+                    title_text="<b>TME (hh:mm:ss)</b>",
+                    tickvals=tickvals,
+                    ticktext=ticktext,
+                    tickfont=dict(size=12, color='#475569'),
+                    secondary_y=False,
+                    showgrid=True,
+                    gridcolor='#E2E8F0',
+                    gridwidth=1,
+                    zeroline=False,
+                    showline=True,
+                    linewidth=1,
+                    linecolor='#CBD5E1'
+                )
+                fig.update_yaxes(
+                    title_text="<b>TMA (hh:mm:ss)</b>",
+                    tickvals=tickvals,
+                    ticktext=ticktext,
+                    tickfont=dict(size=12, color='#475569'),
+                    secondary_y=True,
+                    showgrid=False,
+                    zeroline=False,
+                    showline=True,
+                    linewidth=1,
+                    linecolor='#CBD5E1'
+                )
+    else:
+        fig.update_yaxes(secondary_y=False)
+        fig.update_yaxes(secondary_y=True)
+
+    # eixo X
     fig.update_xaxes(
         title_text="<b>Data</b>",
         title_font=dict(size=14, color='#1E293B', family="Inter, sans-serif"),
@@ -236,30 +326,6 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
         showgrid=True,
         gridcolor='#E2E8F0',
         gridwidth=1,
-        zeroline=False,
-        showline=True,
-        linewidth=1,
-        linecolor='#CBD5E1'
-    )
-    fig.update_yaxes(
-        title_text="<b>TME (minutos)</b>",
-        title_font=dict(size=14, color='#1E293B', family="Inter, sans-serif"),
-        tickfont=dict(size=12, color='#475569'),
-        secondary_y=False,
-        showgrid=True,
-        gridcolor='#E2E8F0',
-        gridwidth=1,
-        zeroline=False,
-        showline=True,
-        linewidth=1,
-        linecolor='#CBD5E1'
-    )
-    fig.update_yaxes(
-        title_text="<b>TMA (minutos)</b>",
-        title_font=dict(size=14, color='#1E293B', family="Inter, sans-serif"),
-        tickfont=dict(size=12, color='#475569'),
-        secondary_y=True,
-        showgrid=False,
         zeroline=False,
         showline=True,
         linewidth=1,
@@ -302,52 +368,11 @@ div.block-container {
     color: #F1F5F9 !important;
 }
 
-[data-testid="stSidebar"] h1 {
-    color: white !important;
-    font-weight: 700;
-    font-size: 1.5rem;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-    border-bottom: 2px solid rgba(255,255,255,0.1);
-}
-
-[data-testid="stSidebar"] .stMarkdown {
-    color: #CBD5E1 !important;
-}
-
-/* Radio buttons no sidebar */
-[data-testid="stSidebar"] [data-testid="stRadio"] label {
-    background: rgba(255,255,255,0.05);
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    margin: 0.25rem 0;
-    transition: all 0.2s;
-}
-
-[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
-    background: rgba(255,255,255,0.1);
-}
-
 /* Headers */
 h1, h2, h3 {
     color: white !important;
     font-weight: 700;
     text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-h1 {
-    font-size: 2.5rem;
-    margin-bottom: 0.5rem;
-}
-
-h2 {
-    font-size: 1.75rem;
-    margin-top: 2rem;
-    margin-bottom: 1rem;
-}
-
-h3 {
-    font-size: 1.5rem;
 }
 
 /* Card de métricas moderno */
@@ -370,11 +395,6 @@ h3 {
     width: 4px;
     height: 100%;
     background: currentColor;
-}
-
-.metric-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
 }
 
 .metric-label {
@@ -416,40 +436,6 @@ h3 {
     box-shadow: 0 10px 30px rgba(0,0,0,0.15);
 }
 
-/* Dividers */
-hr {
-    border: none;
-    height: 1px;
-    background: rgba(255,255,255,0.2);
-    margin: 2rem 0;
-}
-
-/* Alerts e mensagens */
-.stAlert {
-    border-radius: 12px;
-    border: none;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-/* Upload de arquivo */
-[data-testid="stFileUploader"] {
-    background: rgba(255,255,255,0.05);
-    border-radius: 12px;
-    padding: 1rem;
-}
-
-/* Multiselect */
-[data-testid="stMultiSelect"] {
-    background: rgba(255,255,255,0.05);
-    border-radius: 8px;
-}
-
-/* Date inputs */
-[data-testid="stDateInput"] {
-    background: rgba(255,255,255,0.05);
-    border-radius: 8px;
-}
-
 /* Footer */
 .footer-text {
     background: rgba(255,255,255,0.1);
@@ -472,31 +458,6 @@ hr {
     transition: all 0.3s;
 }
 
-.stDownloadButton button:hover {
-    transform: scale(1.05);
-    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-}
-
-/* Spinner */
-.stSpinner > div {
-    border-color: white !important;
-    border-right-color: transparent !important;
-}
-
-/* Responsividade */
-@media (max-width: 768px) {
-    h1 {
-        font-size: 1.75rem;
-    }
-    
-    .metric-value {
-        font-size: 1.5rem;
-    }
-    
-    div.block-container {
-        padding: 1rem;
-    }
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -505,25 +466,25 @@ hr {
 # ----------------------------
 with st.sidebar:
     st.title("⚙️ Configurações")
-    
+
     st.markdown("**📤 Upload do arquivo**")
     uploaded_file = st.file_uploader(
         "Selecione o arquivo Excel",
         type=['xlsx'],
         help="Arquivo deve conter: 'Inicio da ação', 'Fila', 'Tempo na Fila', 'Tempo de atendimento'"
     )
-    
+
     st.markdown("---")
-    
+
     st.markdown("**📊 Navegação**")
     page = st.radio(
         "Escolha a página",
         ["📈 Visão Geral", "🔍 Visualização por Fila", "📁 Upload & Dados"],
         label_visibility="collapsed"
     )
-    
+
     st.markdown("---")
-    
+
     st.markdown("**🎯 Filtros**")
     filas_selecionadas = st.multiselect(
         "Filas",
@@ -531,7 +492,7 @@ with st.sidebar:
         default=FILAS_MONITORADAS[:1],
         help="Selecione uma ou mais filas para análise"
     )
-    
+
     hoje = dt.date.today()
     col1, col2 = st.columns(2)
     with col1:
@@ -546,10 +507,10 @@ with st.sidebar:
             value=hoje,
             help="Data final"
         )
-    
+
     if periodo_inicio > periodo_fim:
         st.error("⚠️ Data início > Data fim")
-    
+
     st.markdown("---")
     st.caption("💡 Selecione múltiplas filas para comparação")
 
@@ -559,11 +520,11 @@ with st.sidebar:
 if uploaded_file is None:
     st.title("📊 Dashboard TME/TMA")
     st.markdown("### Bem-vindo ao Dashboard de Monitoramento")
-    
+
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.info("👈 Faça upload do arquivo Excel na barra lateral para começar")
-        
+
         st.markdown("""
         **Requisitos do arquivo:**
         - Formato: Excel (.xlsx)
@@ -608,9 +569,9 @@ if page_clean == "Visão Geral":
 
     # Cards de métricas
     agregados = agregar_metricas(df_periodo[df_periodo['Fila'].isin(filas_selecionadas)])
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
         meta_tme = min([METAS.get(f,{'TME':999})['TME'] for f in filas_selecionadas if f in METAS], default=999)
         cor = cores_card(agregados['TME_medio'], meta_tme)
@@ -621,7 +582,7 @@ if page_clean == "Visão Geral":
             <div class='metric-subtitle'>{formatar_tempo_hhmmss(agregados['TME_medio'])}</div>
         </div>
         """, unsafe_allow_html=True)
-    
+
     with col2:
         meta_tma = min([METAS.get(f,{'TMA':999})['TMA'] for f in filas_selecionadas if f in METAS], default=999)
         cor = cores_card(agregados['TMA_medio'], meta_tma)
@@ -632,7 +593,7 @@ if page_clean == "Visão Geral":
             <div class='metric-subtitle'>{formatar_tempo_hhmmss(agregados['TMA_medio'])}</div>
         </div>
         """, unsafe_allow_html=True)
-    
+
     with col3:
         st.markdown(f"""
         <div class='metric-card' style='color:{CORES['primary']}'>
@@ -641,7 +602,7 @@ if page_clean == "Visão Geral":
             <div class='metric-subtitle'>atendimentos</div>
         </div>
         """, unsafe_allow_html=True)
-    
+
     with col4:
         st.markdown(f"""
         <div class='metric-card' style='color:{CORES['info']}'>
@@ -664,7 +625,7 @@ if page_clean == "Visão Geral":
         TMA_media=('TMA', 'mean'),
         Volume=('volume', 'sum')
     ).reset_index()
-    
+
     st.dataframe(
         resumo_por_fila.style.format({"TME_media":"{:.2f}", "TMA_media":"{:.2f}"}),
         use_container_width=True,
@@ -680,7 +641,7 @@ elif page_clean == "Visualização por Fila":
         options=filas_selecionadas,
         default=filas_selecionadas[:1]
     )
-    
+
     if not filas_para_visual:
         st.warning("⚠️ Selecione pelo menos uma fila")
         st.stop()
@@ -688,9 +649,9 @@ elif page_clean == "Visualização por Fila":
     for idx, fila in enumerate(filas_para_visual):
         if idx > 0:
             st.markdown("<br><br>", unsafe_allow_html=True)
-            
+
         st.markdown(f"### 📌 {fila}")
-        
+
         df_fila = df_periodo[df_periodo['Fila'] == fila].sort_values('Data')
         if df_fila.empty:
             st.info("ℹ️ Sem dados para este período")
@@ -703,7 +664,7 @@ elif page_clean == "Visualização por Fila":
         meta_tma = METAS.get(fila, {'TMA': 0})['TMA']
 
         c1, c2, c3 = st.columns(3)
-        
+
         with c1:
             cor = cores_card(tme_medio, meta_tme)
             status = "✓" if tme_medio <= meta_tme else "⚠"
@@ -714,7 +675,7 @@ elif page_clean == "Visualização por Fila":
                 <div class='metric-subtitle'>Meta: {formatar_tempo_hhmmss(meta_tme)}</div>
             </div>
             """, unsafe_allow_html=True)
-        
+
         with c2:
             cor = cores_card(tma_medio, meta_tma)
             status = "✓" if tma_medio <= meta_tma else "⚠"
@@ -725,7 +686,7 @@ elif page_clean == "Visualização por Fila":
                 <div class='metric-subtitle'>Meta: {formatar_tempo_hhmmss(meta_tma)}</div>
             </div>
             """, unsafe_allow_html=True)
-        
+
         with c3:
             st.markdown(f"""
             <div class='metric-card' style='color:{CORES['primary']}'>
@@ -743,11 +704,11 @@ elif page_clean == "Upload & Dados":
     st.markdown("Validação e exportação de dados processados")
 
     tab1, tab2 = st.tabs(["📄 Amostra de Dados", "📊 Estatísticas"])
-    
+
     with tab1:
         st.markdown("### Primeiras 200 linhas")
         st.dataframe(df_periodo.head(200), use_container_width=True, height=400)
-        
+
         st.markdown("### 💾 Download")
         csv = df_periodo.to_csv(index=False).encode('utf-8')
         col1, col2, col3 = st.columns([1,2,1])
@@ -759,7 +720,7 @@ elif page_clean == "Upload & Dados":
                 mime="text/csv",
                 use_container_width=True
             )
-    
+
     with tab2:
         st.markdown("### Resumo Estatístico por Fila")
         resumo = df_periodo.groupby('Fila').agg(
@@ -771,7 +732,7 @@ elif page_clean == "Upload & Dados":
             TMA_Max=('TMA','max'),
             Volume_Total=('volume','sum')
         ).reset_index()
-        
+
         st.dataframe(
             resumo.style.format({
                 "TME_Media": "{:.2f}",

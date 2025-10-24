@@ -191,7 +191,9 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             x=1
          ),
         margin=dict(t=100),
-        template='plotly_white' # Fundo claro
+        template='plotly_white', # Fundo claro
+        plot_bgcolor='white',  # Fundo do gráfico branco
+        paper_bgcolor='white', # Fundo externo branco
     )
     
     # Eixo X
@@ -200,7 +202,7 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
         tickformat="%d/%b",
         showgrid=True,
         gridwidth=1,
-        gridcolor='rgba(150, 150, 150, 0.5)' # Grade mais clara (50% de opacidade)
+        gridcolor='rgba(220, 220, 220, 0.8)'  # Linhas de grade mais claras
     )
 
     # Eixo Y Primário (TME)
@@ -209,7 +211,7 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
         secondary_y=False, 
         showgrid=True,
         gridwidth=1,
-        gridcolor='rgba(150, 150, 150, 0.5)', # Grade mais clara (50% de opacidade)
+        gridcolor='rgba(220, 220, 220, 0.8)',  # Linhas de grade mais claras
         # Ajusta o limite superior para acomodar a meta TME e os rótulos de dados
         range=[0, max(df_fila['TME'].max() * 1.15 if not df_fila['TME'].empty else 0, meta_tme_valor * 1.2)]
     )
@@ -235,6 +237,28 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
+
+    # Aplicar tema claro com CSS personalizado
+    st.markdown("""
+        <style>
+        .main {
+            background-color: #ffffff;
+        }
+        .stApp {
+            background-color: white;
+        }
+        .css-18e3th9 {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            color: #262730;
+        }
+        .stSidebar {
+            background-color: #f0f2f6;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
     st.title("📊 Dashboard de Desempenho TME/TMA")
     st.markdown("---")

@@ -8,7 +8,14 @@ from typing import Optional
 # ----------------------------
 # Configurações iniciais
 # ----------------------------
-st.set_page_config(page_title="Dashboard TME/TMA", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Dashboard TME/TMA",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'About': "Dashboard de Monitoramento TME/TMA v2.0"
+    }
+)
 
 # Filas monitoradas e metas (minutos)
 FILAS_MONITORADAS = [
@@ -29,6 +36,18 @@ METAS = {
     'N2-Administrativo': {'TME': 3.0, 'TMA': 30.0}
 }
 
+# Paleta de cores profissional
+CORES = {
+    'primary': '#2E5BFF',
+    'success': '#00C48C',
+    'warning': '#FFA756',
+    'danger': '#FF647C',
+    'info': '#00D4FF',
+    'dark': '#1E293B',
+    'light': '#F8FAFC',
+    'muted': '#64748B'
+}
+
 # ----------------------------
 # Funções utilitárias
 # ----------------------------
@@ -44,7 +63,6 @@ def converter_tempo_para_minutos(tempo_obj) -> float:
         if isinstance(tempo_obj, dt.timedelta):
             return tempo_obj.total_seconds() / 60
         if isinstance(tempo_obj, str):
-            # Formatos esperados: HH:MM:SS ou MM:SS ou apenas número
             parts = tempo_obj.strip().split(':')
             if len(parts) == 3:
                 h, m, s = [int(x) for x in parts]
@@ -52,7 +70,6 @@ def converter_tempo_para_minutos(tempo_obj) -> float:
             if len(parts) == 2:
                 m, s = [int(x) for x in parts]
                 return m + s / 60
-            # tenta converter número
             return float(tempo_obj.replace(',', '.'))
         return float(tempo_obj)
     except Exception:
@@ -76,43 +93,38 @@ def ler_e_processar_dados(uploaded_file) -> Optional[pd.DataFrame]:
     """Lê o arquivo Excel e calcula TME/TMA em minutos por Data e Fila."""
     try:
         df = pd.read_excel(uploaded_file)
-        # Verificações mínimas
         required = ['Inicio da ação', 'Fila', 'Tempo na Fila', 'Tempo de atendimento']
         for col in required:
             if col not in df.columns:
                 raise ValueError(f"Coluna obrigatória não encontrada: '{col}'")
 
-        # Conversão de datas
         df['Inicio da ação'] = pd.to_datetime(df['Inicio da ação'], errors='coerce')
         df = df.dropna(subset=['Inicio da ação'])
         df['Data'] = df['Inicio da ação'].dt.date
 
-        # Converter tempos para minutos
         df['TME_minutos'] = df['Tempo na Fila'].apply(converter_tempo_para_minutos)
         df['TMA_minutos'] = df['Tempo de atendimento'].apply(converter_tempo_para_minutos)
 
-        # Agrupar por Data e Fila
         resultados = df.groupby(['Data', 'Fila']).agg(
             TME=('TME_minutos', 'mean'),
             TMA=('TMA_minutos', 'mean'),
             volume=('Fila', 'size')
         ).reset_index()
 
-        # Ordenar por data
         resultados = resultados.sort_values(by=['Data'])
         return resultados
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
+        st.error(f"❌ Erro ao processar o arquivo: {e}")
         return None
 
 def cores_card(valor: float, meta: float) -> str:
-    """Retorna cor (hex) para o card com base na comparação valor vs meta (verde = bom)."""
+    """Retorna cor para o card com base na comparação valor vs meta."""
     try:
         if valor <= 0:
-            return "#6c757d"  # cinza neutro
-        return "#198754" if valor <= meta else "#dc3545"  # verde se dentro da meta, vermelho se fora
+            return CORES['muted']
+        return CORES['success'] if valor <= meta else CORES['danger']
     except Exception:
-        return "#6c757d"
+        return CORES['muted']
 
 def agregar_metricas(df: pd.DataFrame) -> dict:
     """Calcula métricas agregadas a partir do df filtrado."""
@@ -128,17 +140,16 @@ def agregar_metricas(df: pd.DataFrame) -> dict:
     return resultado
 
 def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list):
-    """Gera gráfico Plotly com possibilidade de múltiplas filas (traços separados por fila)."""
-    # Cores fixas para consistência
-    paleta = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd', '#e377c2', '#7f7f7f']
+    """Gera gráfico Plotly com possibilidade de múltiplas filas."""
+    paleta = [CORES['primary'], CORES['warning'], CORES['success'], '#8B5CF6', '#EC4899', '#14B8A6']
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # Para cada fila, criar série de TME e TMA
     for i, fila in enumerate(filas_selecionadas):
         df_f = df_fila[df_fila['Fila'] == fila].copy().sort_values('Data')
         if df_f.empty:
             continue
         cor = paleta[i % len(paleta)]
+        
         # TME
         fig.add_trace(
             go.Scatter(
@@ -146,114 +157,321 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
                 name=f"{fila} - TME",
                 marker=dict(symbol='circle', size=8),
                 line=dict(width=3, color=cor),
-                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TME: %{y:.2f} min<br>%{text}",
+                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TME: %{y:.2f} min<br>%{text}<extra></extra>",
                 text=[formatar_tempo_hhmmss(v) for v in df_f['TME']]
             ),
             secondary_y=False
         )
-        # TMA no eixo secundário (mesma cor com estilo mais suave)
+        
+        # TMA
         fig.add_trace(
             go.Scatter(
                 x=df_f['Data'], y=df_f['TMA'], mode='lines+markers',
                 name=f"{fila} - TMA",
                 marker=dict(symbol='square', size=8),
                 line=dict(width=3, dash='dash', color=cor),
-                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TMA: %{y:.2f} min<br>%{text}",
+                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TMA: %{y:.2f} min<br>%{text}<extra></extra>",
                 text=[formatar_tempo_hhmmss(v) for v in df_f['TMA']]
             ),
             secondary_y=True
         )
 
-    # Linhas de metas — quando múltiplas filas, mostramos faixa entre min e max das metas selecionadas
     metas_tme = [METAS.get(fila, {'TME': 0})['TME'] for fila in filas_selecionadas if fila in METAS]
     metas_tma = [METAS.get(fila, {'TMA': 0})['TMA'] for fila in filas_selecionadas if fila in METAS]
-    # Apenas desenhar se houver valores válidos
     all_dates = sorted(df_fila['Data'].unique().tolist())
+    
     if all_dates:
         if metas_tme:
             meta_tme_min = min(metas_tme)
             fig.add_trace(
                 go.Scatter(x=all_dates, y=[meta_tme_min]*len(all_dates), mode='lines',
-                           name=f"Meta TME (min={meta_tme_min:.0f}m)",
-                           line=dict(color='#0b74de', dash='dot', width=2)),
+                           name=f"Meta TME ({meta_tme_min:.0f}m)",
+                           line=dict(color=CORES['info'], dash='dot', width=2),
+                           hovertemplate="Meta TME: %{y:.2f} min<extra></extra>"),
                 secondary_y=False
             )
         if metas_tma:
             meta_tma_min = min(metas_tma)
             fig.add_trace(
                 go.Scatter(x=all_dates, y=[meta_tma_min]*len(all_dates), mode='lines',
-                           name=f"Meta TMA (min={meta_tma_min:.0f}m)",
-                           line=dict(color='#ff7f0e', dash='dot', width=2)),
+                           name=f"Meta TMA ({meta_tma_min:.0f}m)",
+                           line=dict(color=CORES['warning'], dash='dot', width=2),
+                           hovertemplate="Meta TMA: %{y:.2f} min<extra></extra>"),
                 secondary_y=True
             )
 
-    # Layout
     fig.update_layout(
-        title_text="<b>Desempenho TME e TMA</b>",
+        title=None,
         template='plotly_white',
         hovermode='x unified',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-        margin=dict(t=90, b=40, l=60, r=40),
-        plot_bgcolor='white',
+        legend=dict(
+            orientation='h',
+            yanchor='bottom',
+            y=1.02,
+            xanchor='right',
+            x=1,
+            bgcolor='rgba(255,255,255,0.9)',
+            bordercolor='#E2E8F0',
+            borderwidth=1
+        ),
+        margin=dict(t=50, b=60, l=70, r=70),
+        plot_bgcolor='#FAFBFC',
         paper_bgcolor='white',
-        font=dict(family="Segoe UI, Roboto, Arial", color='#111827')
+        font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=12, color=CORES['dark']),
+        height=500
     )
 
-    # Eixos
-    fig.update_xaxes(title_text="Data", tickformat="%d/%b", showgrid=True, gridcolor='rgba(220,220,220,0.8)')
-    fig.update_yaxes(title_text="TME (min)", secondary_y=False, showgrid=True, gridcolor='rgba(220,220,220,0.8)')
-    fig.update_yaxes(title_text="TMA (min)", secondary_y=True, showgrid=False)
+    fig.update_xaxes(
+        title_text="<b>Data</b>",
+        tickformat="%d/%b",
+        showgrid=True,
+        gridcolor='#E2E8F0',
+        zeroline=False
+    )
+    fig.update_yaxes(
+        title_text="<b>TME (minutos)</b>",
+        secondary_y=False,
+        showgrid=True,
+        gridcolor='#E2E8F0',
+        zeroline=False
+    )
+    fig.update_yaxes(
+        title_text="<b>TMA (minutos)</b>",
+        secondary_y=True,
+        showgrid=False,
+        zeroline=False
+    )
 
     return fig
 
 # ----------------------------
-# CSS customizado
+# CSS customizado - Visual Profissional
 # ----------------------------
 st.markdown("""
 <style>
-/* Layout centralizado */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Reset e configurações gerais */
+* {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Container principal */
+.main {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background-attachment: fixed;
+}
+
 div.block-container {
     max-width: 1400px;
-    padding-top: 1.25rem;
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
+    padding: 2rem 1.5rem;
+    background: transparent;
 }
 
-/* Sidebar styles */
+/* Sidebar */
 [data-testid="stSidebar"] {
-    background: linear-gradient(#ffffff, #f8f9fb);
-    border-right: 1px solid #e6e9ef;
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+    border-right: none;
 }
 
-/* Header titles */
+[data-testid="stSidebar"] * {
+    color: #F1F5F9 !important;
+}
+
+[data-testid="stSidebar"] h1 {
+    color: white !important;
+    font-weight: 700;
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+}
+
+[data-testid="stSidebar"] .stMarkdown {
+    color: #CBD5E1 !important;
+}
+
+/* Radio buttons no sidebar */
+[data-testid="stSidebar"] [data-testid="stRadio"] label {
+    background: rgba(255,255,255,0.05);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    margin: 0.25rem 0;
+    transition: all 0.2s;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+/* Headers */
 h1, h2, h3 {
-    color: #0f172a;
-    font-family: 'Segoe UI', Roboto, Arial;
+    color: white !important;
+    font-weight: 700;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-/* Metric card */
+h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+h2 {
+    font-size: 1.75rem;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+
+h3 {
+    font-size: 1.5rem;
+}
+
+/* Card de métricas moderno */
 .metric-card {
-    background: #ffffff;
-    padding: 12px;
-    border-radius: 10px;
-    border: 1px solid #e6e9ef;
-    box-shadow: 0 1px 3px rgba(16,24,40,0.04);
+    background: white;
+    padding: 1.5rem;
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
 }
 
-/* Small helper text */
-.small-muted {
-    color: #6b7280;
-    font-size: 13px;
+.metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: currentColor;
 }
 
-/* Make Plotly container look nicer */
-.stPlotlyChart > div {
-    border-radius: 12px !important;
+.metric-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
 }
 
-/* Responsividade - ajustar espaçamentos em telas menores */
-@media (max-width: 800px) {
-    .stSidebar { display: block; }
+.metric-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1E293B;
+    line-height: 1.2;
+}
+
+.metric-subtitle {
+    font-size: 0.875rem;
+    color: #64748B;
+    margin-top: 0.5rem;
+}
+
+/* Gráficos com visual melhorado */
+.stPlotlyChart {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    margin: 1.5rem 0;
+}
+
+/* Dataframes */
+[data-testid="stDataFrame"] {
+    background: white;
+    border-radius: 16px;
+    padding: 1rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+}
+
+/* Dividers */
+hr {
+    border: none;
+    height: 1px;
+    background: rgba(255,255,255,0.2);
+    margin: 2rem 0;
+}
+
+/* Alerts e mensagens */
+.stAlert {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Upload de arquivo */
+[data-testid="stFileUploader"] {
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+/* Multiselect */
+[data-testid="stMultiSelect"] {
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+}
+
+/* Date inputs */
+[data-testid="stDateInput"] {
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+}
+
+/* Footer */
+.footer-text {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    padding: 1rem;
+    border-radius: 12px;
+    text-align: center;
+    font-size: 0.875rem;
+    backdrop-filter: blur(10px);
+}
+
+/* Download button */
+.stDownloadButton button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.stDownloadButton button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+/* Spinner */
+.stSpinner > div {
+    border-color: white !important;
+    border-right-color: transparent !important;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    h1 {
+        font-size: 1.75rem;
+    }
+    
+    .metric-value {
+        font-size: 1.5rem;
+    }
+    
+    div.block-container {
+        padding: 1rem;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -262,186 +480,298 @@ h1, h2, h3 {
 # Sidebar: Upload e controles
 # ----------------------------
 with st.sidebar:
-    st.title("Configurações")
-    st.markdown("**1. Upload do arquivo**")
-    uploaded_file = st.file_uploader("Excel (.xlsx) com colunas: 'Inicio da ação', 'Fila', 'Tempo na Fila', 'Tempo de atendimento'", type=['xlsx'])
+    st.title("⚙️ Configurações")
+    
+    st.markdown("**📤 Upload do arquivo**")
+    uploaded_file = st.file_uploader(
+        "Selecione o arquivo Excel",
+        type=['xlsx'],
+        help="Arquivo deve conter: 'Inicio da ação', 'Fila', 'Tempo na Fila', 'Tempo de atendimento'"
+    )
+    
     st.markdown("---")
-    st.markdown("**2. Navegação**")
-    page = st.radio("Escolha a página", ["Visão Geral", "Visualização por Fila", "Upload & Dados"])
+    
+    st.markdown("**📊 Navegação**")
+    page = st.radio(
+        "Escolha a página",
+        ["📈 Visão Geral", "🔍 Visualização por Fila", "📁 Upload & Dados"],
+        label_visibility="collapsed"
+    )
+    
     st.markdown("---")
-    st.markdown("**3. Filtros rápidos** (aplicados nas páginas)")
-    filas_selecionadas = st.multiselect("Filas", options=FILAS_MONITORADAS, default=FILAS_MONITORADAS[:1])
-    # Período padrão: últimos 14 dias
+    
+    st.markdown("**🎯 Filtros**")
+    filas_selecionadas = st.multiselect(
+        "Filas",
+        options=FILAS_MONITORADAS,
+        default=FILAS_MONITORADAS[:1],
+        help="Selecione uma ou mais filas para análise"
+    )
+    
     hoje = dt.date.today()
-    periodo_inicio = st.date_input("Data início", value=hoje - dt.timedelta(days=14))
-    periodo_fim = st.date_input("Data fim", value=hoje)
+    col1, col2 = st.columns(2)
+    with col1:
+        periodo_inicio = st.date_input(
+            "De",
+            value=hoje - dt.timedelta(days=14),
+            help="Data inicial"
+        )
+    with col2:
+        periodo_fim = st.date_input(
+            "Até",
+            value=hoje,
+            help="Data final"
+        )
+    
     if periodo_inicio > periodo_fim:
-        st.error("A data início não pode ser posterior à data fim.")
+        st.error("⚠️ Data início > Data fim")
+    
     st.markdown("---")
-    st.caption("Dica: selecione múltiplas filas para comparar.")
+    st.caption("💡 Selecione múltiplas filas para comparação")
 
-# Se não há arquivo, exibe instrução nas páginas (exceto Upload)
+# ----------------------------
+# Validação de upload
+# ----------------------------
 if uploaded_file is None:
-    if page != "Upload & Dados":
-        st.warning("Faça upload do arquivo Excel na barra lateral (Upload do arquivo).")
-    if page == "Upload & Dados":
-        st.info("Use este espaço para validar o arquivo antes do processamento.")
-    # Exibe uma área minimal e retorna para não quebrar execução
-    if page != "Visão Geral": 
-        # Mostrar amostra de template (opcional)
-        st.stop()
+    st.title("📊 Dashboard TME/TMA")
+    st.markdown("### Bem-vindo ao Dashboard de Monitoramento")
+    
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.info("👈 Faça upload do arquivo Excel na barra lateral para começar")
+        
+        st.markdown("""
+        **Requisitos do arquivo:**
+        - Formato: Excel (.xlsx)
+        - Colunas obrigatórias:
+          - `Inicio da ação`
+          - `Fila`
+          - `Tempo na Fila`
+          - `Tempo de atendimento`
+        """)
+    st.stop()
 
 # ----------------------------
 # Processamento dos dados
 # ----------------------------
-with st.spinner("Processando arquivo..."):
+with st.spinner("⏳ Processando dados..."):
     df_processado = ler_e_processar_dados(uploaded_file)
 
 if df_processado is None or df_processado.empty:
-    st.warning("Nenhum dado válido após processamento. Verifique o arquivo e as colunas.")
+    st.warning("⚠️ Nenhum dado válido encontrado. Verifique o arquivo.")
     st.stop()
 
-# Aplicar filtro por período
+# Aplicar filtros
 df_processado['Data'] = pd.to_datetime(df_processado['Data'])
 mask_periodo = (df_processado['Data'].dt.date >= periodo_inicio) & (df_processado['Data'].dt.date <= periodo_fim)
 df_periodo = df_processado.loc[mask_periodo].copy()
 
 if df_periodo.empty:
-    st.warning("Não há dados no intervalo de datas selecionado.")
+    st.warning("⚠️ Sem dados no período selecionado.")
     st.stop()
 
-# Se nenhuma fila selecionada, usar todas disponíveis
 if not filas_selecionadas:
     filas_selecionadas = sorted(df_periodo['Fila'].unique().tolist())
 
 # ----------------------------
 # Páginas
 # ----------------------------
-if page == "Visão Geral":
-    st.header("Visão Geral")
-    st.markdown("Resumo das filas selecionadas e tendências.")
+page_clean = page.split(" ", 1)[1] if " " in page else page
 
-    # Agregação por fila (métricas gerais)
+if page_clean == "Visão Geral":
+    st.title("📈 Visão Geral")
+    st.markdown("Panorama completo das métricas de atendimento")
+
+    # Cards de métricas
+    agregados = agregar_metricas(df_periodo[df_periodo['Fila'].isin(filas_selecionadas)])
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        meta_tme = min([METAS.get(f,{'TME':999})['TME'] for f in filas_selecionadas if f in METAS], default=999)
+        cor = cores_card(agregados['TME_medio'], meta_tme)
+        st.markdown(f"""
+        <div class='metric-card' style='color:{cor}'>
+            <div class='metric-label'>⏱️ TME Médio</div>
+            <div class='metric-value'>{agregados['TME_medio']:.1f}<span style='font-size:1rem;color:#64748B'> min</span></div>
+            <div class='metric-subtitle'>{formatar_tempo_hhmmss(agregados['TME_medio'])}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        meta_tma = min([METAS.get(f,{'TMA':999})['TMA'] for f in filas_selecionadas if f in METAS], default=999)
+        cor = cores_card(agregados['TMA_medio'], meta_tma)
+        st.markdown(f"""
+        <div class='metric-card' style='color:{cor}'>
+            <div class='metric-label'>📞 TMA Médio</div>
+            <div class='metric-value'>{agregados['TMA_medio']:.1f}<span style='font-size:1rem;color:#64748B'> min</span></div>
+            <div class='metric-subtitle'>{formatar_tempo_hhmmss(agregados['TMA_medio'])}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div class='metric-card' style='color:{CORES['primary']}'>
+            <div class='metric-label'>📊 Volume Total</div>
+            <div class='metric-value'>{agregados['volume_total']:,}</div>
+            <div class='metric-subtitle'>atendimentos</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+        <div class='metric-card' style='color:{CORES['info']}'>
+            <div class='metric-label'>🎯 Período</div>
+            <div class='metric-value' style='font-size:1rem'>{len(filas_selecionadas)} fila(s)</div>
+            <div class='metric-subtitle'>{periodo_inicio.strftime('%d/%m')} — {periodo_fim.strftime('%d/%m/%Y')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Gráfico principal
+    st.markdown("### 📉 Evolução Temporal")
+    fig_geral = gerar_grafico_tme_tma_plotly(df_periodo, filas_selecionadas)
+    st.plotly_chart(fig_geral, use_container_width=True)
+
+    st.markdown("### 📋 Resumo por Fila")
     resumo_por_fila = df_periodo[df_periodo['Fila'].isin(filas_selecionadas)].groupby('Fila').agg(
         TME_media=('TME', 'mean'),
         TMA_media=('TMA', 'mean'),
-        volume=('volume', 'sum')
+        Volume=('volume', 'sum')
     ).reset_index()
+    
+    st.dataframe(
+        resumo_por_fila.style.format({"TME_media":"{:.2f}", "TMA_media":"{:.2f}"}),
+        use_container_width=True,
+        height=300
+    )
 
-    # Top row: cards de métricas agregadas (TME médio, TMA médio e Volume)
-    agregados = agregar_metricas(df_periodo[df_periodo['Fila'].isin(filas_selecionadas)])
-    col1, col2, col3, col4 = st.columns([1.6,1.6,1.6,2.2])
-    with col1:
-        cor = cores_card(agregados['TME_medio'], min([METAS.get(f,{'TME':999})['TME'] for f in filas_selecionadas if f in METAS]))
-        st.markdown(f"<div class='metric-card' style='border-left:4px solid {cor}'>"
-                    f"<div style='font-size:14px;color:#6b7280'>TME Médio (min)</div>"
-                    f"<div style='font-size:22px;font-weight:700'>{agregados['TME_medio']:.2f} min</div>"
-                    f"<div class='small-muted'>{formatar_tempo_hhmmss(agregados['TME_medio'])}</div>"
-                    f"</div>", unsafe_allow_html=True)
-    with col2:
-        cor = cores_card(agregados['TMA_medio'], min([METAS.get(f,{'TMA':999})['TMA'] for f in filas_selecionadas if f in METAS]))
-        st.markdown(f"<div class='metric-card' style='border-left:4px solid {cor}'>"
-                    f"<div style='font-size:14px;color:#6b7280'>TMA Médio (min)</div>"
-                    f"<div style='font-size:22px;font-weight:700'>{agregados['TMA_medio']:.2f} min</div>"
-                    f"<div class='small-muted'>{formatar_tempo_hhmmss(agregados['TMA_medio'])}</div>"
-                    f"</div>", unsafe_allow_html=True)
-    with col3:
-        st.markdown(f"<div class='metric-card' style='border-left:4px solid #0d6efd'>"
-                    f"<div style='font-size:14px;color:#6b7280'>Volume Total</div>"
-                    f"<div style='font-size:22px;font-weight:700'>{agregados['volume_total']}</div>"
-                    f"<div class='small-muted'>Período selecionado</div>"
-                    f"</div>", unsafe_allow_html=True)
-    with col4:
-        st.markdown("<div class='metric-card'>"
-                    "<div style='font-size:14px;color:#6b7280'>Filas selecionadas</div>"
-                    f"<div style='font-size:16px;font-weight:600'>{', '.join(filas_selecionadas)}</div>"
-                    f"<div class='small-muted'>Período: {periodo_inicio.strftime('%d/%m/%Y')} — {periodo_fim.strftime('%d/%m/%Y')}</div>"
-                    "</div>", unsafe_allow_html=True)
+elif page_clean == "Visualização por Fila":
+    st.title("🔍 Visualização por Fila")
+    st.markdown("Análise detalhada por fila de atendimento")
 
-    st.markdown("---")
-    # Gráfico consolidado para todas as filas selecionadas
-    st.subheader("Tendência TME/TMA — Filas selecionadas")
-    fig_geral = gerar_grafico_tme_tma_plotly(df_periodo, filas_selecionadas)
-    st.plotly_chart(fig_geral, use_container_width=True, height=520)
-
-    st.markdown("---")
-    st.subheader("Resumo por fila")
-    st.dataframe(resumo_por_fila.style.format({"TME_media":"{:.2f}", "TMA_media":"{:.2f}"}), use_container_width=True)
-
-elif page == "Visualização por Fila":
-    st.header("Visualização por Fila")
-    st.markdown("Escolha a(s) fila(s) e confira o gráfico e métricas por fila.")
-
-    # Permitir selecionar filas específicas (ainda respeitando seleção lateral)
-    filas_para_visual = st.multiselect("Filas para visualizar (gráficos separados por fila)", options=filas_selecionadas, default=filas_selecionadas[:1])
+    filas_para_visual = st.multiselect(
+        "Selecione as filas para visualizar",
+        options=filas_selecionadas,
+        default=filas_selecionadas[:1]
+    )
+    
     if not filas_para_visual:
-        st.warning("Selecione pelo menos uma fila para visualizar.")
+        st.warning("⚠️ Selecione pelo menos uma fila")
         st.stop()
 
-    # Para cada fila selecionada mostrar seção com gráfico e mini-métricas
-    for fila in filas_para_visual:
-        st.subheader(f"Fila: {fila}")
+    for idx, fila in enumerate(filas_para_visual):
+        if idx > 0:
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            
+        st.markdown(f"### 📌 {fila}")
+        
         df_fila = df_periodo[df_periodo['Fila'] == fila].sort_values('Data')
         if df_fila.empty:
-            st.info("Sem dados para este período.")
+            st.info("ℹ️ Sem dados para este período")
             continue
 
-        # Métricas da fila
         tme_medio = float(df_fila['TME'].mean())
         tma_medio = float(df_fila['TMA'].mean())
         volume = int(df_fila['volume'].sum())
         meta_tme = METAS.get(fila, {'TME': 0})['TME']
         meta_tma = METAS.get(fila, {'TMA': 0})['TMA']
 
-        c1, c2, c3 = st.columns([1.8,1.8,2.2])
+        c1, c2, c3 = st.columns(3)
+        
         with c1:
             cor = cores_card(tme_medio, meta_tme)
-            st.markdown(f"<div class='metric-card' style='border-left:4px solid {cor}'>"
-                        f"<div style='font-size:13px;color:#6b7280'>TME Médio</div>"
-                        f"<div style='font-size:18px;font-weight:700'>{tme_medio:.2f} min</div>"
-                        f"<div class='small-muted'>{formatar_tempo_hhmmss(tme_medio)} — Meta: {formatar_tempo_hhmmss(meta_tme)}</div>"
-                        "</div>", unsafe_allow_html=True)
+            status = "✓" if tme_medio <= meta_tme else "⚠"
+            st.markdown(f"""
+            <div class='metric-card' style='color:{cor}'>
+                <div class='metric-label'>⏱️ TME Médio {status}</div>
+                <div class='metric-value'>{tme_medio:.1f}<span style='font-size:1rem;color:#64748B'> min</span></div>
+                <div class='metric-subtitle'>Meta: {formatar_tempo_hhmmss(meta_tme)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with c2:
             cor = cores_card(tma_medio, meta_tma)
-            st.markdown(f"<div class='metric-card' style='border-left:4px solid {cor}'>"
-                        f"<div style='font-size:13px;color:#6b7280'>TMA Médio</div>"
-                        f"<div style='font-size:18px;font-weight:700'>{tma_medio:.2f} min</div>"
-                        f"<div class='small-muted'>{formatar_tempo_hhmmss(tma_medio)} — Meta: {formatar_tempo_hhmmss(meta_tma)}</div>"
-                        "</div>", unsafe_allow_html=True)
+            status = "✓" if tma_medio <= meta_tma else "⚠"
+            st.markdown(f"""
+            <div class='metric-card' style='color:{cor}'>
+                <div class='metric-label'>📞 TMA Médio {status}</div>
+                <div class='metric-value'>{tma_medio:.1f}<span style='font-size:1rem;color:#64748B'> min</span></div>
+                <div class='metric-subtitle'>Meta: {formatar_tempo_hhmmss(meta_tma)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with c3:
-            st.markdown(f"<div class='metric-card' style='border-left:4px solid #0d6efd'>"
-                        f"<div style='font-size:13px;color:#6b7280'>Volume (Período)</div>"
-                        f"<div style='font-size:18px;font-weight:700'>{volume}</div>"
-                        f"<div class='small-muted'>Total de atendimentos</div>"
-                        "</div>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='metric-card' style='color:{CORES['primary']}'>
+                <div class='metric-label'>📊 Volume</div>
+                <div class='metric-value'>{volume:,}</div>
+                <div class='metric-subtitle'>atendimentos</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        # Gráfico desta fila (apenas uma linha de TME + TMA)
         fig_f = gerar_grafico_tme_tma_plotly(df_periodo[df_periodo['Fila'].isin([fila])], [fila])
-        st.plotly_chart(fig_f, use_container_width=True, height=480)
-        st.markdown("---")
+        st.plotly_chart(fig_f, use_container_width=True)
 
-elif page == "Upload & Dados":
-    st.header("Upload & Dados (validação)")
-    st.markdown("Use esta página para validar rapidamente o arquivo e baixar amostras.")
+elif page_clean == "Upload & Dados":
+    st.title("📁 Upload & Dados")
+    st.markdown("Validação e exportação de dados processados")
 
-    st.subheader("Amostra do arquivo processado")
-    st.dataframe(df_periodo.head(200), use_container_width=True)
-
-    st.markdown("### Estatísticas rápidas por fila")
-    resumo = df_periodo.groupby('Fila').agg(
-        TME_media=('TME','mean'),
-        TMA_media=('TMA','mean'),
-        volume=('volume','sum')
-    ).reset_index()
-    st.dataframe(resumo.style.format({"TME_media":"{:.2f}", "TMA_media":"{:.2f}"}), use_container_width=True)
-
-    st.markdown("### Download dos dados processados (CSV)")
-    csv = df_periodo.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Baixar CSV (dados processados)", data=csv, file_name="dados_processados.csv", mime="text/csv")
+    tab1, tab2 = st.tabs(["📄 Amostra de Dados", "📊 Estatísticas"])
+    
+    with tab1:
+        st.markdown("### Primeiras 200 linhas")
+        st.dataframe(df_periodo.head(200), use_container_width=True, height=400)
+        
+        st.markdown("### 💾 Download")
+        csv = df_periodo.to_csv(index=False).encode('utf-8')
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            st.download_button(
+                "📥 Baixar Dados Processados (CSV)",
+                data=csv,
+                file_name=f"dados_processados_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    
+    with tab2:
+        st.markdown("### Resumo Estatístico por Fila")
+        resumo = df_periodo.groupby('Fila').agg(
+            TME_Media=('TME','mean'),
+            TME_Min=('TME','min'),
+            TME_Max=('TME','max'),
+            TMA_Media=('TMA','mean'),
+            TMA_Min=('TMA','min'),
+            TMA_Max=('TMA','max'),
+            Volume_Total=('volume','sum')
+        ).reset_index()
+        
+        st.dataframe(
+            resumo.style.format({
+                "TME_Media": "{:.2f}",
+                "TME_Min": "{:.2f}",
+                "TME_Max": "{:.2f}",
+                "TMA_Media": "{:.2f}",
+                "TMA_Min": "{:.2f}",
+                "TMA_Max": "{:.2f}"
+            }),
+            use_container_width=True,
+            height=400
+        )
 
 # ----------------------------
-# Rodapé com última atualização do arquivo
+# Rodapé
 # ----------------------------
-st.markdown("---")
-ultima_atual = uploaded_file.name if uploaded_file is not None else "Nenhum arquivo"
-st.markdown(f"<div style='color:#6b7280;font-size:13px'>Arquivo carregado: <strong>{ultima_atual}</strong> — Atualizado em {dt.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</div>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+nome_arquivo = uploaded_file.name if uploaded_file is not None else "Nenhum arquivo"
+ultima_atualizacao = dt.datetime.now().strftime('%d/%m/%Y às %H:%M:%S')
+
+st.markdown(f"""
+<div class='footer-text'>
+    <strong>📄 Arquivo:</strong> {nome_arquivo} &nbsp;|&nbsp; 
+    <strong>🕐 Atualizado:</strong> {ultima_atualizacao} &nbsp;|&nbsp;
+    <strong>📊 Dashboard TME/TMA v2.0</strong>
+</div>
+""", unsafe_allow_html=True)

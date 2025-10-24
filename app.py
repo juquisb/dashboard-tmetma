@@ -180,7 +180,7 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
     fig.update_layout(
         title_text=f"<b>{fila.upper()}</b> - Desempenho TME e TMA",
         title_font_size=20,
-        title_font_color='#1f1f1f',  # Cor escura para o título
+        title_font_color='#1f1f1f',
         hovermode="x unified",
         legend=dict(
             orientation="h",
@@ -193,14 +193,14 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
         template='plotly_white',
         plot_bgcolor='white',
         paper_bgcolor='white',
-        font=dict(color='#1f1f1f')  # Cor padrão para todo o texto do gráfico
+        font=dict(color='#1f1f1f')
     )
     
     # Eixo X
     fig.update_xaxes(
         title_text="Data",
-        title_font_color='#1f1f1f',  # Cor do título do eixo X
-        tickfont_color='#1f1f1f',    # Cor dos ticks do eixo X
+        title_font_color='#1f1f1f',
+        tickfont_color='#1f1f1f',
         tickformat="%d/%b",
         showgrid=True,
         gridwidth=1,
@@ -212,8 +212,8 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
     # Eixo Y Primário (TME)
     fig.update_yaxes(
         title_text="TME (Tempo Médio de Espera) - Minutos",
-        title_font_color='#1f1f1f',  # Cor do título do eixo Y
-        tickfont_color='#1f1f1f',    # Cor dos ticks do eixo Y
+        title_font_color='#1f1f1f',
+        tickfont_color='#1f1f1f',
         secondary_y=False, 
         showgrid=True,
         gridwidth=1,
@@ -226,8 +226,8 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
     # Eixo Y Secundário (TMA)
     fig.update_yaxes(
         title_text="TMA (Tempo Médio de Atendimento) - Minutos",
-        title_font_color='#1f1f1f',  # Cor do título do eixo Y secundário
-        tickfont_color='#1f1f1f',    # Cor dos ticks do eixo Y secundário
+        title_font_color='#1f1f1f',
+        tickfont_color='#1f1f1f',
         secondary_y=True, 
         showgrid=False,
         range=[0, max(df_fila['TMA'].max() * 1.15 if not df_fila['TMA'].empty else 0, meta_tma_valor * 1.2)]
@@ -244,36 +244,63 @@ def main():
         initial_sidebar_state="expanded"
     )
 
-    # CSS personalizado para harmonizar o tema
+    # CSS personalizado para tema claro com título escuro
     st.markdown("""
         <style>
+        /* Fundo principal da aplicação */
+        .stApp {
+            background-color: #ffffff;
+        }
+        
+        /* Container principal */
         .main {
             background-color: #ffffff;
         }
-        .stApp {
-            background-color: #f8f9fa;
-        }
-        .css-18e3th9 {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-            background-color: #f8f9fa;
-        }
+        
+        /* Sidebar */
         .stSidebar {
-            background-color: #f0f2f6;
+            background-color: #f8f9fa;
         }
-        h1, h2, h3, h4, h5, h6 {
-            color: #1f1f1f;
+        
+        /* Título principal em cor escura */
+        .stTitle h1 {
+            color: #1f1f1f !important;
+            font-weight: 700;
         }
+        
+        /* Headers e subheaders em cor escura */
+        h1, h2, h3 {
+            color: #1f1f1f !important;
+        }
+        
+        /* Texto padrão */
         .stMarkdown {
             color: #1f1f1f;
         }
-        div[data-testid="stMetricValue"] {
-            color: #1f1f1f;
+        
+        /* Divisória */
+        hr {
+            border-color: #e1e1e1;
+        }
+        
+        /* Cards e containers */
+        .stMetric {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 10px;
+        }
+        
+        /* Uploader de arquivo */
+        .stFileUploader {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 10px;
         }
         </style>
         """, unsafe_allow_html=True)
 
-    st.title("📊 Dashboard de Desempenho TME/TMA")
+    # Título do Dashboard em letras escuras
+    st.markdown("<h1 style='color: #1f1f1f;'>📊 Dashboard de Desempenho TME/TMA</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
     # 1. Upload de Arquivo

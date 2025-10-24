@@ -153,12 +153,15 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
         # TME
         fig.add_trace(
             go.Scatter(
-                x=df_f['Data'], y=df_f['TME'], mode='lines+markers',
+                x=df_f['Data'], y=df_f['TME'], mode='lines+markers+text',
                 name=f"{fila} - TME",
                 marker=dict(symbol='circle', size=8),
                 line=dict(width=3, color=cor),
-                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TME: %{y:.2f} min<br>%{text}<extra></extra>",
-                text=[formatar_tempo_hhmmss(v) for v in df_f['TME']]
+                text=[f"{v:.1f}" for v in df_f['TME']],
+                textposition='top center',
+                textfont=dict(size=10, color=cor, family="Inter, sans-serif"),
+                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TME: %{y:.2f} min<br>%{customdata}<extra></extra>",
+                customdata=[formatar_tempo_hhmmss(v) for v in df_f['TME']]
             ),
             secondary_y=False
         )
@@ -166,12 +169,15 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
         # TMA
         fig.add_trace(
             go.Scatter(
-                x=df_f['Data'], y=df_f['TMA'], mode='lines+markers',
+                x=df_f['Data'], y=df_f['TMA'], mode='lines+markers+text',
                 name=f"{fila} - TMA",
                 marker=dict(symbol='square', size=8),
                 line=dict(width=3, dash='dash', color=cor),
-                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TMA: %{y:.2f} min<br>%{text}<extra></extra>",
-                text=[formatar_tempo_hhmmss(v) for v in df_f['TMA']]
+                text=[f"{v:.1f}" for v in df_f['TMA']],
+                textposition='bottom center',
+                textfont=dict(size=10, color=cor, family="Inter, sans-serif"),
+                hovertemplate="<b>%{x|%d/%m/%Y}</b><br>TMA: %{y:.2f} min<br>%{customdata}<extra></extra>",
+                customdata=[formatar_tempo_hhmmss(v) for v in df_f['TMA']]
             ),
             secondary_y=True
         )

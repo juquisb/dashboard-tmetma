@@ -34,7 +34,7 @@ METAS = {
     'Tri-algumas_horas': {'TME': 60.0, 'TMA': 120.0},
     'plantao': {'TME': 5.0, 'TMA': 60.0},
     'Parcerias': {'TME': 3.0, 'TMA': 30.0},
-    'N2-Administrativo': {'TME': 3.0, 'TMA': 30.0}
+    'N2-Administrativo': {'TME': 30.0, 'TMA': 120.0}
 }
 
 # Paleta de cores profissional

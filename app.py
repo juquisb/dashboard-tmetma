@@ -144,13 +144,17 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
     """Gera gráfico Plotly com:
        - TME: linha tracejada
        - TMA: linha SOLIDA (cor distinta) + marcadores coloridos por meta
-       - Axis ticks em hh:mm:ss
+       - Axis ticks em hh:mm:ss (garantindo inclusão das metas)
        - Rótulos e hover em hh:mm:ss
     """
     paleta = [CORES['primary'], CORES['warning'], CORES['success'], '#8B5CF6', '#EC4899', '#14B8A6']
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # coletar todos os valores para definir ticks adequados no eixo
+    # metas selecionadas (usadas também para garantir que as linhas de meta estejam visíveis)
+    metas_tme = [METAS.get(fila, {'TME': 0})['TME'] for fila in filas_selecionadas if fila in METAS]
+    metas_tma = [METAS.get(fila, {'TMA': 0})['TMA'] for fila in filas_selecionadas if fila in METAS]
+
+    # coletar todos os valores para definir ticks adequados no eixo (inclui metas)
     valores_minutos = []
     for fila in filas_selecionadas:
         df_tmp = df_fila[df_fila['Fila'] == fila]
@@ -158,6 +162,9 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
             continue
         valores_minutos.extend(df_tmp['TME'].tolist())
         valores_minutos.extend(df_tmp['TMA'].tolist())
+    # incluir metas na escala para garantir visibilidade das linhas de meta
+    valores_minutos.extend(metas_tme)
+    valores_minutos.extend(metas_tma)
 
     # função interna para gerar ticks em minutos e labels em hh:mm:ss
     def gerar_ticks_em_minutos(min_val, max_val):
@@ -186,7 +193,8 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
             continue
 
         cor_tme = paleta[i % len(paleta)]
-        cor_tma_base = CORES['dark']  # cor da linha do TMA (sólida)
+        # cor da linha do TMA (sólida) — escolha distinta para contraste
+        cor_tma_base = '#0f172a'  # tom escuro para destacar a linha sólida do TMA
 
         meta_tma = METAS.get(fila, {'TMA': 0})['TMA']
 
@@ -221,7 +229,7 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
                 mode='lines+markers+text',
                 name=f"{fila} - TMA",
                 marker=dict(symbol='square', size=9, color=tma_marker_colors, line=dict(width=1, color='rgba(0,0,0,0.08)')),
-                line=dict(width=3, dash='solid', color=cor_tma_base),
+                line=dict(width=3, dash='solid', color=cor_tma_base),  # <-- SOLIDA garantida aqui
                 text=[formatar_tempo_hhmmss(v) for v in df_f['TMA']],
                 textposition='bottom center',
                 textfont=dict(size=10, color=cor_tma_base, family="Inter, sans-serif"),
@@ -232,8 +240,6 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
         )
 
     # adicionar linhas de meta (usa o menor meta entre as filas selecionadas)
-    metas_tme = [METAS.get(fila, {'TME': 0})['TME'] for fila in filas_selecionadas if fila in METAS]
-    metas_tma = [METAS.get(fila, {'TMA': 0})['TMA'] for fila in filas_selecionadas if fila in METAS]
     # pegar todas as datas presentes no df_fila para desenhar a reta de meta
     all_dates = sorted(df_fila['Data'].unique()) if not df_fila.empty else []
 
@@ -279,13 +285,13 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
         height=520
     )
 
-    # configurar ticks dos eixos Y para mostrar hh:mm:ss
+    # configurar ticks dos eixos Y para mostrar hh:mm:ss (garantindo que as metas estejam incluídas)
     if valores_minutos:
         valores_clean = [v for v in valores_minutos if v is not None and not pd.isna(v)]
         if valores_clean:
             mn = float(np.nanmin(valores_clean))
             mx = float(np.nanmax(valores_clean))
-            tickvals, ticktext = gerar_ticks_em_minutos(mn, mx)
+            tickvals, ticktext = gerar_ticks_em_minutos_local(mn, mx)
             if tickvals and ticktext:
                 fig.update_yaxes(
                     title_text="<b>TME (hh:mm:ss)</b>",
@@ -333,6 +339,26 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
     )
 
     return fig
+
+# NOTE: mover a função gerar_ticks_em_minutos para cima do uso (declaro aqui para evitar erro)
+def gerar_ticks_em_minutos_local(min_val, max_val):
+    import math
+    if min_val is None or max_val is None or np.isnan(min_val) or np.isnan(max_val):
+        return None, None
+    span = max_val - min_val
+    if span <= 30:
+        step = 5
+    elif span <= 120:
+        step = 10
+    elif span <= 360:
+        step = 30
+    else:
+        step = 60
+    low = max(0, int(np.floor(min_val / step)) * step)
+    high = int(np.ceil(max_val / step)) * step
+    tickvals = list(range(low, high + 1, step))
+    ticktext = [formatar_tempo_hhmmss(v) for v in tickvals]
+    return tickvals, ticktext
 
 # ----------------------------
 # CSS customizado - Visual Profissional

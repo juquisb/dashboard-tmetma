@@ -1,217 +1,280 @@
+import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import datetime as dt
-from datetime import datetime
+import io
 
-class RelatorioTMETMA:
-    def __init__(self, caminho_excel):
-        self.caminho_excel = caminho_excel
-        self.filas_monitoradas = [
-            'Acolhimento',
-            'Tri-agora',
-            'Tri-algumas_horas',
-            'plantao',
-            'Parcerias',
-            'N2-Administrativo'
-        ]
-        self.metas = {
-            'Acolhimento': {'TME': 3.0, 'TMA': 30.0},
-            'Tri-agora': {'TME': 5.0, 'TMA': 60.0},
-            'Tri-algumas_horas': {'TME': 60.0, 'TMA': 120.0},
-            'plantao': {'TME': 5.0, 'TMA': 60.0},
-            'Parcerias': {'TME': 3.0, 'TMA': 30.0},
-            'N2-Administrativo': {'TME': 3.0, 'TMA': 30.0}
-        }
+# --- Configurações e Lógica de Processamento de Dados (Baseado no Código do Usuário) ---
 
-    def ler_dados_excel(self):
-        df = pd.read_excel(self.caminho_excel)
-        df['Inicio da ação'] = pd.to_datetime(df['Inicio da ação'])
-        return df
+FILAS_MONITORADAS = [
+    'Acolhimento',
+    'Tri-agora',
+    'Tri-algumas_horas',
+    'plantao',
+    'Parcerias',
+    'N2-Administrativo'
+]
 
-    def converter_tempo_para_minutos(self, tempo_obj):
-        """Converte tempo (HH:MM:SS, datetime.time ou número) para minutos decimais."""
-        try:
-            if isinstance(tempo_obj, (int, float)):
-                return float(tempo_obj)
-            if pd.isna(tempo_obj):
-                return 0.0
-            if isinstance(tempo_obj, dt.time):
-                return tempo_obj.hour * 60 + tempo_obj.minute + tempo_obj.second / 60
-            if isinstance(tempo_obj, str) and ':' in tempo_obj:
-                h, m, s = [int(x) for x in tempo_obj.split(':')]
-                return h * 60 + m + s / 60
-            return float(tempo_obj)
-        except:
+METAS = {
+    'Acolhimento': {'TME': 3.0, 'TMA': 30.0},
+    'Tri-agora': {'TME': 5.0, 'TMA': 60.0},
+    'Tri-algumas_horas': {'TME': 60.0, 'TMA': 120.0},
+    'plantao': {'TME': 5.0, 'TMA': 60.0},
+    'Parcerias': {'TME': 3.0, 'TMA': 30.0},
+    'N2-Administrativo': {'TME': 3.0, 'TMA': 30.0}
+}
+
+def converter_tempo_para_minutos(tempo_obj):
+    """Converte tempo (HH:MM:SS, datetime.time, ou número) para minutos decimais."""
+    # Lógica mantida do código original do usuário
+    try:
+        if pd.isna(tempo_obj):
             return 0.0
+        if isinstance(tempo_obj, (int, float)):
+            return float(tempo_obj)
+        if isinstance(tempo_obj, dt.time):
+            return tempo_obj.hour * 60 + tempo_obj.minute + tempo_obj.second / 60
+        if isinstance(tempo_obj, str) and ':' in tempo_obj:
+            h, m, s = [int(x) for x in tempo_obj.split(':')]
+            return h * 60 + m + s / 60
+        # Adição para tratar timedelta
+        if isinstance(tempo_obj, dt.timedelta):
+            return tempo_obj.total_seconds() / 60
+        # Tenta converter string para float se for o caso
+        return float(tempo_obj)
+    except Exception:
+        return 0.0
 
-    def formatar_tempo_hhmmss(self, minutos):
-        """Converte minutos decimais para o formato hh:mm:ss."""
-        if minutos <= 0 or pd.isna(minutos):
-            return "00:00:00"
-        total_segundos = int(round(minutos * 60))
-        horas = total_segundos // 3600
-        minutos_restantes = (total_segundos % 3600) // 60
-        segundos = total_segundos % 60
-        return f"{horas:02d}:{minutos_restantes:02d}:{segundos:02d}"
+def formatar_tempo_hhmmss(minutos):
+    """Converte minutos decimais para o formato hh:mm:ss."""
+    # Lógica mantida do código original do usuário
+    if minutos <= 0 or pd.isna(minutos):
+        return "00:00:00"
+    total_segundos = int(round(minutos * 60))
+    horas = total_segundos // 3600
+    minutos_restantes = (total_segundos % 3600) // 60
+    segundos = total_segundos % 60
+    return f"{horas:02d}:{minutos_restantes:02d}:{segundos:02d}"
 
-    def calcular_medias_por_data(self, df):
-        """Agrupa os dados por data e calcula médias de TME/TMA por fila."""
+@st.cache_data
+def ler_e_processar_dados(uploaded_file):
+    """Lê o arquivo Excel e calcula as médias de TME/TMA por data e fila."""
+    try:
+        # A função ler_dados_excel do código original foi incorporada aqui
+        df = pd.read_excel(io.BytesIO(uploaded_file.getvalue()))
+        
+        # Validação de colunas
+        required_cols = ['Inicio da ação', 'Fila', 'Tempo na Fila', 'Tempo de atendimento']
+        if not all(col in df.columns for col in required_cols):
+            missing = [col for col in required_cols if col not in df.columns]
+            st.error(f"Colunas obrigatórias não encontradas: {', '.join(missing)}")
+            return None
+
+        # Conversão de data (mantida a lógica do código original)
+        df['Inicio da ação'] = pd.to_datetime(df['Inicio da ação'], errors='coerce')
+        df = df.dropna(subset=['Inicio da ação'])
         df['Data'] = df['Inicio da ação'].dt.date
-        resultados_por_data = {}
 
-        for data in sorted(df['Data'].unique()):
-            dados_do_dia = df[df['Data'] == data]
-            resultados_data = {}
+        # Aplicar a conversão para minutos
+        df['TME_minutos'] = df['Tempo na Fila'].apply(converter_tempo_para_minutos)
+        df['TMA_minutos'] = df['Tempo de atendimento'].apply(converter_tempo_para_minutos)
 
-            for fila in self.filas_monitoradas:
-                dados_fila = dados_do_dia[dados_do_dia['Fila'] == fila]
-                if dados_fila.empty:
-                    resultados_data[fila] = {'TME': 0, 'TMA': 0, 'volume': 0}
-                    continue
+        # Agrupamento e cálculo das médias (mantida a lógica do código original)
+        resultados_df = df.groupby(['Data', 'Fila']).agg(
+            TME=('TME_minutos', 'mean'),
+            TMA=('TMA_minutos', 'mean'),
+            volume=('Fila', 'size')
+        ).reset_index()
+        
+        return resultados_df
 
-                tempos_fila = dados_fila['Tempo na Fila'].apply(self.converter_tempo_para_minutos)
-                tempos_atendimento = dados_fila['Tempo de atendimento'].apply(self.converter_tempo_para_minutos)
+    except Exception as e:
+        st.error(f"Erro ao processar o arquivo: {e}")
+        return None
 
-                resultados_data[fila] = {
-                    'TME': tempos_fila.mean(),
-                    'TMA': tempos_atendimento.mean(),
-                    'volume': len(dados_fila)
-                }
+def gerar_grafico_tme_tma_plotly(df_fila, fila):
+    """Gera o gráfico de TME e TMA usando Plotly com dois eixos Y (substituindo Matplotlib)."""
+    
+    # Cores
+    cor_tme = '#1f77b4'  # Azul (para TME)
+    cor_tma = '#ff7f0e'  # Laranja (para TMA)
+    
+    meta_tme_valor = METAS[fila]['TME']
+    meta_tma_valor = METAS[fila]['TMA']
 
-            resultados_por_data[data] = resultados_data
-        return resultados_por_data
+    # Criar figura com subplots e dois eixos Y
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    def gerar_graficos_por_fila(self, resultados_por_data):
-        """Gera gráficos de TME e TMA por fila com dois eixos verticais separados."""
-        for fila in self.filas_monitoradas:
-            datas = []
-            datas_formatadas = []
-            tmes = []
-            tmas = []
-            volumes = []
+    # --- Plotar TME (Eixo Y Primário - Esquerda) ---
+    fig.add_trace(
+        go.Scatter(
+            x=df_fila['Data'], 
+            y=df_fila['TME'], 
+            mode='lines+markers+text', 
+            name='TME Real (min)',
+            marker=dict(color=cor_tme, size=10, symbol='circle'),
+            line=dict(width=4), # Linha mais visível
+            text=[formatar_tempo_hhmmss(tme) for tme in df_fila['TME']],
+            textposition="top center",
+            textfont=dict(color=cor_tme, size=11, weight='bold'),
+        ),
+        secondary_y=False,
+    )
 
-            for data, resultados in resultados_por_data.items():
-                if fila in resultados and resultados[fila]['volume'] > 0:
-                    datas.append(data)
-                    # Formata a data como "10/out"
-                    datas_formatadas.append(data.strftime("%d/%b").lower())
-                    tmes.append(resultados[fila]['TME'])
-                    tmas.append(resultados[fila]['TMA'])
-                    volumes.append(resultados[fila]['volume'])
+    # Linha da Meta TME
+    fig.add_trace(
+        go.Scatter(
+            x=df_fila['Data'], 
+            y=[meta_tme_valor] * len(df_fila), 
+            mode='lines', 
+            name=f'Meta TME ({formatar_tempo_hhmmss(meta_tme_valor)})',
+            line=dict(color=cor_tme, dash='dash', width=2.5), # Meta mais visível
+            hoverinfo='skip'
+        ),
+        secondary_y=False,
+    )
 
-            if not datas:
-                continue
+    # --- Plotar TMA (Eixo Y Secundário - Direita) ---
+    fig.add_trace(
+        go.Scatter(
+            x=df_fila['Data'], 
+            y=df_fila['TMA'], 
+            mode='lines+markers+text', 
+            name='TMA Real (min)',
+            marker=dict(color=cor_tma, size=10, symbol='square'),
+            line=dict(width=4), # Linha mais visível
+            text=[formatar_tempo_hhmmss(tma) for tma in df_fila['TMA']],
+            textposition="top center",
+            textfont=dict(color=cor_tma, size=11, weight='bold'),
+        ),
+        secondary_y=True,
+    )
 
-            # Criar figura com dois eixos y
-            fig, ax1 = plt.figure(figsize=(12, 6)), plt.gca()
-            ax2 = ax1.twinx()
+    # Linha da Meta TMA
+    fig.add_trace(
+        go.Scatter(
+            x=df_fila['Data'], 
+            y=[meta_tma_valor] * len(df_fila), 
+            mode='lines', 
+            name=f'Meta TMA ({formatar_tempo_hhmmss(meta_tma_valor)})',
+            line=dict(color=cor_tma, dash='dash', width=2.5), # Meta mais visível
+            hoverinfo='skip'
+        ),
+        secondary_y=True,
+    )
 
-            # Configurar cores
-            cor_tme = 'green'
-            cor_tma = 'blue'
-            cor_meta_tme = 'lightgreen'
-            cor_meta_tma = 'lightblue'
+    # --- Configurações de Layout ---
 
-            # Plotar TME no eixo esquerdo (ax1)
-            linha_tme = ax1.plot(datas, tmes, color=cor_tme, marker='o', linewidth=2, 
-                               label='TME Real', markersize=6)
-            # Linha da meta TME
-            meta_tme_valor = self.metas[fila]['TME']
-            linha_meta_tme = ax1.axhline(y=meta_tme_valor, color=cor_meta_tme, linestyle='--', 
-                                       linewidth=2, label=f'Meta TME ({self.formatar_tempo_hhmmss(meta_tme_valor)})')
+    # Título e Legenda
+    fig.update_layout(
+        title_text=f"<b>{fila.upper()}</b> - Desempenho TME e TMA",
+        title_font_size=20,
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        margin=dict(t=100),
+        template='plotly_white' # Fundo claro
+    )
 
-            # Plotar TMA no eixo direito (ax2)
-            linha_tma = ax2.plot(datas, tmas, color=cor_tma, marker='s', linewidth=2, 
-                               label='TMA Real', markersize=6)
-            # Linha da meta TMA
-            meta_tma_valor = self.metas[fila]['TMA']
-            linha_meta_tma = ax2.axhline(y=meta_tma_valor, color=cor_meta_tma, linestyle='--', 
-                                       linewidth=2, label=f'Meta TMA ({self.formatar_tempo_hhmmss(meta_tma_valor)})')
+    # Eixo X
+    fig.update_xaxes(
+        title_text="Data",
+        tickformat="%d/%b",
+        showgrid=True,
+        gridwidth=1,
+        gridcolor='rgba(150, 150, 150, 0.5)' # Grade mais clara
+    )
 
-            # Rótulos de dados para TME
-            for x, y in zip(datas, tmes):
-                if y > 0:
-                    tempo_formatado = self.formatar_tempo_hhmmss(y)
-                    ax1.text(x, y + (max(tmes) * 0.02), tempo_formatado, ha='center', 
-                           va='bottom', fontsize=9, color=cor_tme, fontweight='bold')
+    # Eixo Y Primário (TME)
+    fig.update_yaxes(
+        title_text="TME (Tempo Médio de Espera) - Minutos", 
+        secondary_y=False, 
+        showgrid=True,
+        gridwidth=1,
+        gridcolor='rgba(150, 150, 150, 0.5)', # Grade mais clara
+        # Ajusta o limite superior para acomodar a meta TME e os rótulos de dados
+        range=[0, max(df_fila['TME'].max() * 1.15 if not df_fila['TME'].empty else 0, meta_tme_valor * 1.2)]
+    )
 
-            # Rótulos de dados para TMA
-            for x, y in zip(datas, tmas):
-                if y > 0:
-                    tempo_formatado = self.formatar_tempo_hhmmss(y)
-                    ax2.text(x, y + (max(tmas) * 0.02), tempo_formatado, ha='center', 
-                           va='bottom', fontsize=9, color=cor_tma, fontweight='bold')
+    # Eixo Y Secundário (TMA)
+    fig.update_yaxes(
+        title_text="TMA (Tempo Médio de Atendimento) - Minutos", 
+        secondary_y=True, 
+        showgrid=False, # Desabilita a grade para o eixo secundário para não poluir
+        # Ajusta o limite superior para acomodar a meta TMA e os rótulos de dados
+        range=[0, max(df_fila['TMA'].max() * 1.15 if not df_fila['TMA'].empty else 0, meta_tma_valor * 1.2)]
+    )
+    
+    return fig
 
-            # Configurar eixo esquerdo (TME)
-            ax1.set_xlabel('Data', fontsize=12, fontweight='bold')
-            ax1.set_ylabel('TME (minutos)', color=cor_tme, fontsize=12, fontweight='bold')
-            ax1.tick_params(axis='y', labelcolor=cor_tme)
-            ax1.grid(True, linestyle='--', alpha=0.3, axis='both')
+# --- Aplicação Streamlit Principal ---
+
+def main():
+    st.set_page_config(
+        page_title="Dashboard TME/TMA",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
+    st.title("📊 Dashboard de Desempenho TME/TMA")
+    st.markdown("---")
+
+    # 1. Upload de Arquivo
+    with st.sidebar:
+        st.header("Upload de Dados")
+        uploaded_file = st.file_uploader(
+            "Selecione o arquivo Excel (com colunas 'Inicio da ação', 'Fila', 'Tempo na Fila', 'Tempo de atendimento')", 
+            type=['xlsx']
+        )
+        
+        if uploaded_file is None:
+            st.info("Aguardando o upload do arquivo Excel.")
+            return
+
+    # 2. Processamento dos Dados
+    with st.spinner('Processando dados...'):
+        df_processado = ler_e_processar_dados(uploaded_file)
+    
+    if df_processado is None or df_processado.empty:
+        st.warning("Nenhum dado válido encontrado após o processamento.")
+        return
+
+    # 3. Filtro de Filas
+    filas_disponiveis = df_processado['Fila'].unique().tolist()
+    filas_para_exibir = [f for f in FILAS_MONITORADAS if f in filas_disponiveis]
+    
+    if not filas_para_exibir:
+        st.warning("Nenhuma das filas monitoradas foi encontrada nos dados.")
+        st.dataframe(df_processado['Fila'].unique())
+        return
+
+    # 4. Exibição dos Gráficos
+    st.header("Visualização por Fila")
+
+    for fila in filas_para_exibir:
+        df_fila = df_processado[df_processado['Fila'] == fila].sort_values(by='Data')
+        
+        if df_fila.empty:
+            continue
+
+        st.subheader(f"Fila: {fila}")
+        
+        # Gráfico TME/TMA (Eixos Duplos)
+        fig_tme_tma = gerar_grafico_tme_tma_plotly(df_fila, fila)
+        st.plotly_chart(fig_tme_tma, use_container_width=True)
+        
+        # Exibir volume total abaixo do gráfico principal (mantido do código original)
+        volume_total = df_fila['volume'].sum()
+        st.markdown(f"**Volume Total de Atendimentos:** {volume_total}")
             
-            # Configurar escala do eixo TME para melhor visualização
-            if tmes:
-                margem_tme = max(tmes) * 0.15
-                ax1.set_ylim(0, max(tmes) + margem_tme)
-
-            # Configurar eixo direito (TMA)
-            ax2.set_ylabel('TMA (minutos)', color=cor_tma, fontsize=12, fontweight='bold')
-            ax2.tick_params(axis='y', labelcolor=cor_tma)
-            
-            # Configurar escala do eixo TMA para melhor visualização
-            if tmas:
-                margem_tma = max(tmas) * 0.15
-                ax2.set_ylim(0, max(tmas) + margem_tma)
-
-            # Configurar eixo x
-            plt.xticks(ticks=datas, labels=datas_formatadas, rotation=45)
-            
-            # Título e legendas
-            plt.title(f'{fila.upper()} - Desempenho TME e TMA\n(Eixos Separados para Melhor Visualização)', 
-                     fontsize=14, fontweight='bold', pad=20)
-            
-            # Combinar legendas de ambos os eixos
-            linhas, labels = ax1.get_legend_handles_labels()
-            linhas2, labels2 = ax2.get_legend_handles_labels()
-            ax2.legend(linhas + linhas2, labels + labels2, loc='upper right', 
-                      bbox_to_anchor=(0, 1), frameon=True, fancybox=True)
-
-            # Adicionar informação de volume no gráfico
-            volume_total = sum(volumes)
-            ax1.text(0.02, 0.98, f'Volume Total: {volume_total} atendimentos', 
-                    transform=ax1.transAxes, fontsize=10, verticalalignment='top',
-                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-
-            plt.tight_layout()
-            plt.show()
-
-            # Gráfico adicional: Volume por dia
-            plt.figure(figsize=(10, 4))
-            bars = plt.bar(datas_formatadas, volumes, color='orange', alpha=0.7)
-            plt.title(f'{fila.upper()} - Volume de Atendimentos por Dia', fontsize=12, fontweight='bold')
-            plt.xlabel('Data')
-            plt.ylabel('Quantidade de Atendimentos')
-            
-            # Adicionar valores nas barras
-            for bar, volume in zip(bars, volumes):
-                plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
-                        str(volume), ha='center', va='bottom', fontweight='bold')
-            
-            plt.grid(True, linestyle='--', alpha=0.3, axis='y')
-            plt.tight_layout()
-            plt.show()
-
-    def executar(self):
-        print("🚀 Iniciando processamento de relatórios TMETMA...")
-
-        df = self.ler_dados_excel()
-        resultados = self.calcular_medias_por_data(df)
-        self.gerar_graficos_por_fila(resultados)
-
-        print("✅ Gráficos gerados com sucesso!")
+        st.markdown("---")
 
 
-# Exemplo de uso
 if __name__ == "__main__":
-    CAMINHO_EXCEL = r"C:\Users\Julio Bueno\Downloads\TMA_ANALISTAS.xlsx"
-    analisador = RelatorioTMETMA(CAMINHO_EXCEL)
-    analisador.executar()
+    main()

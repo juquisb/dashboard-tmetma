@@ -207,39 +207,57 @@ def gerar_grafico_tme_tma_plotly(df_fila: pd.DataFrame, filas_selecionadas: list
         legend=dict(
             orientation='h',
             yanchor='bottom',
-            y=1.02,
+            y=1.05,
             xanchor='right',
             x=1,
-            bgcolor='rgba(255,255,255,0.9)',
-            bordercolor='#E2E8F0',
-            borderwidth=1
+            bgcolor='rgba(255,255,255,0.95)',
+            bordercolor='#CBD5E1',
+            borderwidth=1,
+            font=dict(size=13, color='#1E293B', family="Inter, sans-serif")
         ),
-        margin=dict(t=50, b=60, l=70, r=70),
-        plot_bgcolor='#FAFBFC',
+        margin=dict(t=80, b=70, l=80, r=80),
+        plot_bgcolor='white',
         paper_bgcolor='white',
-        font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=12, color=CORES['dark']),
-        height=500
+        font=dict(family="Inter, system-ui, -apple-system, sans-serif", size=13, color='#1E293B'),
+        height=520
     )
 
     fig.update_xaxes(
         title_text="<b>Data</b>",
+        title_font=dict(size=14, color='#1E293B', family="Inter, sans-serif"),
         tickformat="%d/%b",
+        tickfont=dict(size=12, color='#475569'),
         showgrid=True,
         gridcolor='#E2E8F0',
-        zeroline=False
+        gridwidth=1,
+        zeroline=False,
+        showline=True,
+        linewidth=1,
+        linecolor='#CBD5E1'
     )
     fig.update_yaxes(
         title_text="<b>TME (minutos)</b>",
+        title_font=dict(size=14, color='#1E293B', family="Inter, sans-serif"),
+        tickfont=dict(size=12, color='#475569'),
         secondary_y=False,
         showgrid=True,
         gridcolor='#E2E8F0',
-        zeroline=False
+        gridwidth=1,
+        zeroline=False,
+        showline=True,
+        linewidth=1,
+        linecolor='#CBD5E1'
     )
     fig.update_yaxes(
         title_text="<b>TMA (minutos)</b>",
+        title_font=dict(size=14, color='#1E293B', family="Inter, sans-serif"),
+        tickfont=dict(size=12, color='#475569'),
         secondary_y=True,
         showgrid=False,
-        zeroline=False
+        zeroline=False,
+        showline=True,
+        linewidth=1,
+        linecolor='#CBD5E1'
     )
 
     return fig

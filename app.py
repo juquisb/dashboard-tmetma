@@ -125,11 +125,11 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=df_fila['TME'], 
             mode='lines+markers+text', 
             name='TME Real (min)',
-            marker=dict(color=cor_tme, size=10, symbol='circle'), # Aumenta o marcador
-            line=dict(width=4), # Aumenta a espessura da linha
+            marker=dict(color=cor_tme, size=10, symbol='circle'),
+            line=dict(width=4),
             text=[formatar_tempo_hhmmss(tme) for tme in df_fila['TME']],
             textposition="top center",
-            textfont=dict(color=cor_tme, size=11, weight='bold'), # Aumenta e negrita o rótulo
+            textfont=dict(color=cor_tme, size=11, weight='bold'),
         ),
         secondary_y=False,
     )
@@ -141,7 +141,7 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=[meta_tme_valor] * len(df_fila), 
             mode='lines', 
             name=f'Meta TME ({formatar_tempo_hhmmss(meta_tme_valor)})',
-            line=dict(color=cor_tme, dash='dash', width=2.5), # Aumenta a espessura da linha de meta
+            line=dict(color=cor_tme, dash='dash', width=2.5),
             hoverinfo='skip'
         ),
         secondary_y=False,
@@ -154,11 +154,11 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=df_fila['TMA'], 
             mode='lines+markers+text', 
             name='TMA Real (min)',
-            marker=dict(color=cor_tma, size=10, symbol='square'), # Aumenta o marcador
-            line=dict(width=4), # Aumenta a espessura da linha
+            marker=dict(color=cor_tma, size=10, symbol='square'),
+            line=dict(width=4),
             text=[formatar_tempo_hhmmss(tma) for tma in df_fila['TMA']],
             textposition="top center",
-            textfont=dict(color=cor_tma, size=11, weight='bold'), # Aumenta e negrita o rótulo
+            textfont=dict(color=cor_tma, size=11, weight='bold'),
         ),
         secondary_y=True,
     )
@@ -170,18 +170,17 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=[meta_tma_valor] * len(df_fila), 
             mode='lines', 
             name=f'Meta TMA ({formatar_tempo_hhmmss(meta_tma_valor)})',
-            line=dict(color=cor_tma, dash='dash', width=2.5), # Aumenta a espessura da linha de meta
+            line=dict(color=cor_tma, dash='dash', width=2.5),
             hoverinfo='skip'
         ),
         secondary_y=True,
     )
 
-      # Configurações de Layout ---
-
-    # Título
+    # Configurações de Layout ---
     fig.update_layout(
         title_text=f"<b>{fila.upper()}</b> - Desempenho TME e TMA",
         title_font_size=20,
+        title_font_color='#1f1f1f',  # Cor escura para o título
         hovermode="x unified",
         legend=dict(
             orientation="h",
@@ -189,45 +188,52 @@ def gerar_grafico_tme_tma_plotly(df_fila, fila):
             y=1.02,
             xanchor="right",
             x=1
-         ),
+        ),
         margin=dict(t=100),
-        template='plotly_white', # Fundo claro
-        plot_bgcolor='white',  # Fundo do gráfico branco
-        paper_bgcolor='white', # Fundo externo branco
+        template='plotly_white',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        font=dict(color='#1f1f1f')  # Cor padrão para todo o texto do gráfico
     )
     
     # Eixo X
     fig.update_xaxes(
         title_text="Data",
+        title_font_color='#1f1f1f',  # Cor do título do eixo X
+        tickfont_color='#1f1f1f',    # Cor dos ticks do eixo X
         tickformat="%d/%b",
         showgrid=True,
         gridwidth=1,
-        gridcolor='rgba(220, 220, 220, 0.8)'  # Linhas de grade mais claras
+        gridcolor='rgba(220, 220, 220, 0.8)',
+        linecolor='#e1e1e1',
+        zerolinecolor='#e1e1e1'
     )
 
     # Eixo Y Primário (TME)
     fig.update_yaxes(
-        title_text="TME (Tempo Médio de Espera) - Minutos", 
+        title_text="TME (Tempo Médio de Espera) - Minutos",
+        title_font_color='#1f1f1f',  # Cor do título do eixo Y
+        tickfont_color='#1f1f1f',    # Cor dos ticks do eixo Y
         secondary_y=False, 
         showgrid=True,
         gridwidth=1,
-        gridcolor='rgba(220, 220, 220, 0.8)',  # Linhas de grade mais claras
-        # Ajusta o limite superior para acomodar a meta TME e os rótulos de dados
+        gridcolor='rgba(220, 220, 220, 0.8)',
+        linecolor='#e1e1e1',
+        zerolinecolor='#e1e1e1',
         range=[0, max(df_fila['TME'].max() * 1.15 if not df_fila['TME'].empty else 0, meta_tme_valor * 1.2)]
     )
 
     # Eixo Y Secundário (TMA)
     fig.update_yaxes(
-        title_text="TMA (Tempo Médio de Atendimento) - Minutos", 
+        title_text="TMA (Tempo Médio de Atendimento) - Minutos",
+        title_font_color='#1f1f1f',  # Cor do título do eixo Y secundário
+        tickfont_color='#1f1f1f',    # Cor dos ticks do eixo Y secundário
         secondary_y=True, 
-        showgrid=False, # Desabilita a grade para o eixo secundário para não poluir
-        # Ajusta o limite superior para acomodar a meta TMA e os rótulos de dados
+        showgrid=False,
         range=[0, max(df_fila['TMA'].max() * 1.15 if not df_fila['TMA'].empty else 0, meta_tma_valor * 1.2)]
     )
     
     return fig
-
-
 
 # --- Aplicação Streamlit Principal ---
 
@@ -238,24 +244,31 @@ def main():
         initial_sidebar_state="expanded"
     )
 
-    # Aplicar tema claro com CSS personalizado
+    # CSS personalizado para harmonizar o tema
     st.markdown("""
         <style>
         .main {
             background-color: #ffffff;
         }
         .stApp {
-            background-color: white;
+            background-color: #f8f9fa;
         }
         .css-18e3th9 {
             padding-top: 2rem;
             padding-bottom: 2rem;
-        }
-        h1, h2, h3, h4, h5, h6 {
-            color: #262730;
+            background-color: #f8f9fa;
         }
         .stSidebar {
             background-color: #f0f2f6;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            color: #1f1f1f;
+        }
+        .stMarkdown {
+            color: #1f1f1f;
+        }
+        div[data-testid="stMetricValue"] {
+            color: #1f1f1f;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -263,7 +276,7 @@ def main():
     st.title("📊 Dashboard de Desempenho TME/TMA")
     st.markdown("---")
 
-    # 1. Upload de Arquivo (Temporariamente carregando arquivo de teste para validação)
+    # 1. Upload de Arquivo
     with st.sidebar:
         st.header("Upload de Dados")
         uploaded_file = st.file_uploader(
@@ -303,7 +316,7 @@ def main():
 
         st.subheader(f"Fila: {fila}")
         
-            # Gráfico TME/TMA (Eixos Duplos)
+        # Gráfico TME/TMA (Eixos Duplos)
         fig_tme_tma = gerar_grafico_tme_tma_plotly(df_fila, fila)
         st.plotly_chart(fig_tme_tma, use_container_width=True)
         
@@ -312,7 +325,6 @@ def main():
         st.markdown(f"**Volume Total de Atendimentos:** {volume_total}")
             
         st.markdown("---")
-
 
 if __name__ == "__main__":
     main()
